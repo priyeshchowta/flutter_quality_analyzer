@@ -1,0 +1,7 @@
+include: package:lints/recommended.yaml
+
+linter:
+  rules:
+    - prefer_single_quotes
+    - avoid_print
+    - sort_constructors_first

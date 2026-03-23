@@ -125,8 +125,8 @@ class ConsoleReporter implements Reporter {
 
     _printRow(
       label: '$packageColor${r.packageName}$_reset',
-      current: r.currentConstraint ?? _dim('-$_reset'),
-      latest: r.latestVersion ?? _dim('-$_reset'),
+      current: r.currentConstraint ?? _dim + '-$_reset',
+      latest: r.latestVersion ?? _dim + '-$_reset',
       status: '$statusColor$statusLabel$_reset',
       packageWidth: packageWidth,
       currentWidth: currentWidth,

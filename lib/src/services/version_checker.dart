@@ -7,9 +7,8 @@ import 'pub_dev_client.dart';
 
 /// Orchestrates version + license + score checking for all dependencies.
 ///
-/// Requests are batched concurrently to avoid rate limiting pub.dev.
+/// Requests are batched concurrently to avoid pub.dev rate limiting.
 class VersionChecker {
-  /// Checks all [dependencies] against pub.dev concurrently.
   Future<List<VersionCheckResult>> checkAll({
     required List<DependencyInfo> dependencies,
     required PubDevClient client,
@@ -19,23 +18,20 @@ class VersionChecker {
 
     for (var i = 0; i < dependencies.length; i += concurrency) {
       final batch = dependencies.skip(i).take(concurrency).toList();
-
       Logger.debug(
-        'Checking batch ${(i ~/ concurrency) + 1}: '
+        'Batch ${(i ~/ concurrency) + 1}: '
         '${batch.map((d) => d.name).join(', ')}',
       );
 
       final batchResults = await Future.wait(
         batch.map((dep) => _checkOne(dep, client)),
       );
-
       results.addAll(batchResults);
     }
 
     return results;
   }
 
-  /// Fetches full package info and builds a [VersionCheckResult].
   Future<VersionCheckResult> _checkOne(
     DependencyInfo dependency,
     PubDevClient client,
@@ -51,7 +47,7 @@ class VersionChecker {
       );
     }
 
-    final info = fetchResult.value!;
+    final info      = fetchResult.value!;
     final isOutdated = _isOutdated(
       constraint: dependency.versionConstraint,
       latestVersion: info.latestVersion,
@@ -70,26 +66,51 @@ class VersionChecker {
   }
 
   /// Returns true if [latestVersion] is NOT satisfied by [constraint].
+  ///
+  /// Handles:
+  ///   - Standard semver:   "^1.2.0", ">=2.0.0"
+  ///   - Build metadata:    "6.1.5+1"  (stripped before parsing)
+  ///   - Any constraint:    "any"      → never outdated
+  ///   - Null constraint:   null       → never outdated
   bool _isOutdated({
     required String? constraint,
     required String latestVersion,
   }) {
-    if (constraint == null || constraint == 'any' || constraint.isEmpty) {
+    if (constraint == null || constraint.isEmpty || constraint == 'any') {
       return false;
     }
 
     try {
       final versionConstraint = VersionConstraint.parse(constraint);
-      final latest = Version.parse(latestVersion);
+
+      // Strip build metadata suffix (+1, +hotfix, etc.) before parsing
+      // pub_semver does not support build metadata in Version.parse()
+      final cleanLatest = _stripBuildMetadata(latestVersion);
+      final latest      = Version.parse(cleanLatest);
+
       return !versionConstraint.allows(latest);
     } catch (e) {
       Logger.debug(
-        'Could not parse version. constraint="$constraint", latest="$latestVersion": $e',
+        'Version parse failed — falling back to string compare. '
+        'constraint="$constraint", latest="$latestVersion": $e',
       );
-      return _stripCaret(constraint) != latestVersion;
+      // Fallback: strip constraint prefix and compare strings
+      return _stripConstraintPrefix(constraint) != latestVersion;
     }
   }
 
-  String _stripCaret(String version) =>
-      version.replaceAll(RegExp(r'^[\^~>=<]+'), '').trim();
+  /// Strips build metadata suffix from a version string.
+  ///
+  /// Examples:
+  ///   "6.1.5+1"      → "6.1.5"
+  ///   "1.0.0+hotfix" → "1.0.0"
+  ///   "1.0.0"        → "1.0.0"
+  String _stripBuildMetadata(String version) {
+    final plusIndex = version.indexOf('+');
+    return plusIndex >= 0 ? version.substring(0, plusIndex) : version;
+  }
+
+  /// Strips version constraint operators for fallback string comparison.
+  String _stripConstraintPrefix(String version) =>
+      version.replaceAll(RegExp(r'^[\^~>=<!]+'), '').trim();
 }

@@ -1,3 +1,12 @@
+## [2.0.1] - 2024-01-04
+
+### Fixed
+- LICENSE column now correctly fetched from `latest.pubspec.license` field
+- Popularity score (`POP`) now correctly parsed from pub.dev score API
+- Version comparison now handles build metadata (e.g. `6.1.5+1`) correctly
+- Gemini rate limit now retries automatically (up to 3 times, 30s apart)
+  instead of failing immediately
+
 # Changelog
 
 ## [2.0.0] - 2024-01-03

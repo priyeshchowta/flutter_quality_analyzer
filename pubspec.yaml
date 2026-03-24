@@ -1,8 +1,8 @@
 name: flutter_quality_analyzer
-description: A CLI tool that analyzes Flutter project dependencies and checks for outdated packages using the pub.dev API.
-version: 1.0.1
-homepage: https://github.com/priyeshchowta/flutter_quality_analyzer
-repository: https://github.com/priyeshchowta/flutter_quality_analyzer
+description: A CLI tool that analyzes Flutter project dependencies — version checks, license detection, test coverage, and AI-powered summary using Gemini.
+version: 2.0.0
+homepage: https://github.com/YOUR_REAL_USERNAME/flutter_quality_analyzer
+repository: https://github.com/YOUR_REAL_USERNAME/flutter_quality_analyzer
 
 environment:
   sdk: ">=3.0.0 <4.0.0"

@@ -1,81 +1,65 @@
 import '../models/version_check_result.dart';
+import '../services/coverage_analyzer.dart';
 import 'reporter.dart';
 
-/// Renders the analysis results to stdout in a clean, readable table format.
-///
-/// Implements [Reporter]. For machine-readable output, use [JsonReporter].
+/// Renders analysis results to stdout in a clean, colored table format.
 class ConsoleReporter implements Reporter {
-  // ANSI color codes for terminal output
-  static const _reset = '\x1B[0m';
-  static const _bold = '\x1B[1m';
-  static const _green = '\x1B[32m';
+  static const _reset  = '\x1B[0m';
+  static const _bold   = '\x1B[1m';
+  static const _green  = '\x1B[32m';
   static const _yellow = '\x1B[33m';
-  static const _red = '\x1B[31m';
-  static const _cyan = '\x1B[36m';
-  static const _dim = '\x1B[2m';
+  static const _red    = '\x1B[31m';
+  static const _cyan   = '\x1B[36m';
+  static const _dim    = '\x1B[2m';
+  static const _blue   = '\x1B[34m';
 
-  /// Prints the full results table to stdout.
+  @override
   void report(List<VersionCheckResult> results) {
     if (results.isEmpty) {
       print('No results to display.');
       return;
     }
 
-    // Calculate column widths dynamically for alignment
-    final packageWidth = _maxWidth(
-      results.map((r) => r.packageName),
-      minimum: 20,
-      header: 'PACKAGE',
-    );
-    final currentWidth = _maxWidth(
-      results.map((r) => r.currentConstraint ?? '-'),
-      minimum: 12,
-      header: 'CURRENT',
-    );
-    final latestWidth = _maxWidth(
-      results.map((r) => r.latestVersion ?? '-'),
-      minimum: 10,
-      header: 'LATEST',
-    );
+    final packageWidth = _maxWidth(results.map((r) => r.packageName), min: 20, header: 'PACKAGE');
+    final currentWidth = _maxWidth(results.map((r) => r.currentConstraint ?? '-'), min: 12, header: 'CURRENT');
+    final latestWidth  = _maxWidth(results.map((r) => r.latestVersion ?? '-'), min: 10, header: 'LATEST');
+    final licenseWidth = _maxWidth(results.map((r) => r.license ?? '-'), min: 10, header: 'LICENSE');
 
-    // Header row
-    _printDivider(packageWidth, currentWidth, latestWidth);
+    _printDivider(packageWidth, currentWidth, latestWidth, licenseWidth);
     _printRow(
-      label: '${_bold}${_cyan}PACKAGE$_reset',
+      pkg: '${_bold}${_cyan}PACKAGE$_reset',
       current: '${_bold}${_cyan}CURRENT$_reset',
       latest: '${_bold}${_cyan}LATEST$_reset',
+      license: '${_bold}${_cyan}LICENSE$_reset',
+      points: '${_bold}${_cyan}PTS$_reset',
+      pop: '${_bold}${_cyan}POP$_reset',
       status: '${_bold}${_cyan}STATUS$_reset',
-      packageWidth: packageWidth,
-      currentWidth: currentWidth,
-      latestWidth: latestWidth,
+      pkgW: packageWidth, curW: currentWidth,
+      latW: latestWidth,  licW: licenseWidth,
     );
-    _printDivider(packageWidth, currentWidth, latestWidth);
+    _printDivider(packageWidth, currentWidth, latestWidth, licenseWidth);
 
-    // Data rows
-    for (final result in _sortResults(results)) {
-      _printResultRow(result, packageWidth, currentWidth, latestWidth);
+    for (final r in _sortResults(results)) {
+      _printResultRow(r, packageWidth, currentWidth, latestWidth, licenseWidth);
     }
 
-    _printDivider(packageWidth, currentWidth, latestWidth);
+    _printDivider(packageWidth, currentWidth, latestWidth, licenseWidth);
     print('');
   }
 
-  /// Prints a summary block with counts.
+  @override
   void printSummary({
     required int total,
     required int outdated,
     required int upToDate,
     required int failed,
   }) {
-    print('${_bold}── Summary ──────────────────────────$_reset');
+    print('${_bold}── Dependency Summary ───────────────────$_reset');
     print('  Total checked : $total');
     print('  $_green✔ Up to date$_reset   : $upToDate');
     print('  ${_red}✖ Outdated$_reset    : $outdated');
-    if (failed > 0) {
-      print('  ${_yellow}⚠ Failed$_reset      : $failed');
-    }
+    if (failed > 0) print('  ${_yellow}⚠ Failed$_reset      : $failed');
     print('');
-
     if (outdated > 0) {
       print('${_yellow}Run `dart pub upgrade` to update your dependencies.$_reset');
     } else if (outdated == 0 && failed == 0) {
@@ -84,11 +68,45 @@ class ConsoleReporter implements Reporter {
     print('');
   }
 
+  /// Prints the test coverage section.
+  void printCoverage(CoverageResult coverage) {
+    print('${_bold}── Test Coverage ────────────────────────$_reset');
+
+    final gradeColor = _gradeColor(coverage.grade);
+
+    print('  Test files   : ${coverage.testFileCount}');
+    print('  Source files : ${coverage.sourceFileCount}');
+    print(
+      '  Ratio        : ${(coverage.coverageRatio * 100).toStringAsFixed(0)}%',
+    );
+    print('  Grade        : $gradeColor${coverage.grade}$_reset');
+
+    if (coverage.testFileCount > 0) {
+      print('  Test files found:');
+      for (final f in coverage.testFiles) {
+        print('    $_dim• $f$_reset');
+      }
+    } else {
+      print('  ${_yellow}⚠ No test files found. Consider adding tests.$_reset');
+    }
+    print('');
+  }
+
+  /// Prints the AI-generated summary section.
+  void printAiSummary(String summary) {
+    print('${_bold}── AI Health Summary (Gemini) ───────────$_reset');
+    print('');
+    // Indent each line for clean formatting
+    for (final line in summary.split('\n')) {
+      print('  $line');
+    }
+    print('');
+  }
+
   // ────────────────────────────────────────
   // Private helpers
   // ────────────────────────────────────────
 
-  /// Sorts results: outdated first, then up-to-date, then failed.
   List<VersionCheckResult> _sortResults(List<VersionCheckResult> results) {
     return [...results]..sort((a, b) {
         if (a.isOutdated && !b.isOutdated) return -1;
@@ -101,87 +119,99 @@ class ConsoleReporter implements Reporter {
 
   void _printResultRow(
     VersionCheckResult r,
-    int packageWidth,
-    int currentWidth,
-    int latestWidth,
+    int pkgW, int curW, int latW, int licW,
   ) {
     final String statusLabel;
     final String statusColor;
-    final String packageColor;
+    final String pkgColor;
 
     if (r.error != null) {
       statusLabel = '⚠ Error';
       statusColor = _yellow;
-      packageColor = _dim;
+      pkgColor    = _dim;
     } else if (r.isOutdated) {
       statusLabel = '✖ Outdated';
       statusColor = _red;
-      packageColor = _bold;
+      pkgColor    = _bold;
     } else {
       statusLabel = '✔ Up to date';
       statusColor = _green;
-      packageColor = '';
+      pkgColor    = '';
     }
 
+    final points = r.pubPoints != null ? '${r.pubPoints}' : '-';
+    final pop    = r.popularity != null ? '${r.popularity}%' : '-';
+
     _printRow(
-      label: '$packageColor${r.packageName}$_reset',
-      current: r.currentConstraint ?? _dim + '-$_reset',
-      latest: r.latestVersion ?? _dim + '-$_reset',
+      pkg: '$pkgColor${r.packageName}$_reset',
+      current: r.currentConstraint ?? '$_dim-$_reset',
+      latest: r.latestVersion ?? '$_dim-$_reset',
+      license: r.license != null
+          ? '$_blue${r.license}$_reset'
+          : '$_dim-$_reset',
+      points: points,
+      pop: pop,
       status: '$statusColor$statusLabel$_reset',
-      packageWidth: packageWidth,
-      currentWidth: currentWidth,
-      latestWidth: latestWidth,
+      pkgW: pkgW, curW: curW, latW: latW, licW: licW,
     );
 
-    // Print error detail on the next line (indented), if any
     if (r.error != null) {
-      print('  $_dim  └─ ${r.error}$_reset');
+      print('    $_dim└─ ${r.error}$_reset');
     }
   }
 
   void _printRow({
-    required String label,
+    required String pkg,
     required String current,
     required String latest,
+    required String license,
+    required String points,
+    required String pop,
     required String status,
-    required int packageWidth,
-    required int currentWidth,
-    required int latestWidth,
+    required int pkgW,
+    required int curW,
+    required int latW,
+    required int licW,
   }) {
-    // Padding is calculated using the *visible* length (stripped of ANSI codes)
-    // so that color escape characters don't throw off column alignment.
     print(
-      '  $label${_space(packageWidth - _stripAnsi(label).length)}'
-      '  $current${_space(currentWidth - _stripAnsi(current).length)}'
-      '  $latest${_space(latestWidth - _stripAnsi(latest).length)}'
+      '  $pkg${_sp(pkgW - _vis(pkg))}'
+      '  $current${_sp(curW - _vis(current))}'
+      '  $latest${_sp(latW - _vis(latest))}'
+      '  $license${_sp(licW - _vis(license))}'
+      '  ${_pad(points, 5)}'
+      '  ${_pad(pop, 6)}'
       '  $status',
     );
   }
 
-  void _printDivider(int packageWidth, int currentWidth, int latestWidth) {
-    final total = packageWidth + currentWidth + latestWidth + 14 + 14;
+  void _printDivider(int pkgW, int curW, int latW, int licW) {
+    final total = pkgW + curW + latW + licW + 5 + 6 + 14 + 10;
     print('  ${'─' * total}');
   }
 
-  /// Returns [n] spaces. Clamps negative values to 0.
-  String _space(int n) => ' ' * (n < 0 ? 0 : n);
+  String _sp(int n) => ' ' * (n < 0 ? 0 : n);
 
-  /// Strips ANSI escape codes to get the visible string length.
-  String _stripAnsi(String s) {
-    return s.replaceAll(RegExp(r'\x1B\[[0-9;]*m'), '');
-  }
+  String _pad(String s, int w) => s.length >= w ? s : s + _sp(w - s.length);
 
-  /// Calculates the column width based on the longest string in [values],
-  /// bounded by [minimum].
-  int _maxWidth(
-    Iterable<String> values, {
-    required int minimum,
-    required String header,
-  }) {
+  /// Strips ANSI codes to measure visible string length.
+  int _vis(String s) =>
+      s.replaceAll(RegExp(r'\x1B\[[0-9;]*m'), '').length;
+
+  int _maxWidth(Iterable<String> values, {required int min, required String header}) {
     final maxVal = values.fold<int>(
       header.length,
       (prev, s) => s.length > prev ? s.length : prev,
     );
-    return maxVal < minimum ? minimum : maxVal;
+    return maxVal < min ? min : maxVal;
+  }
+
+  String _gradeColor(String grade) {
+    switch (grade) {
+      case 'Excellent': return _green;
+      case 'Good':      return _cyan;
+      case 'Fair':      return _yellow;
+      case 'Poor':      return _red;
+      default:          return _red;
+    }
   }
 }

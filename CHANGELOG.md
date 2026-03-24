@@ -1,29 +1,32 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [2.0.0] - 2024-01-03
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Added
+- License detection — fetched from pub.dev API for every package
+- pub points and popularity score columns in output table
+- Like count from pub.dev
+- Test coverage analyzer — counts test files vs source files, grades the project
+- AI-powered health summary using Google Gemini API (free tier)
+- New CLI flags: `--coverage`, `--ai-summary`, `--gemini-key`
+- `VersionCheckResult.copyWith()` for immutable field updates
+
+### Changed
+- `PubDevClient.fetchLatestVersion` renamed to `fetchPackageInfo` (fetches more data)
+- Output table now shows LICENSE, PTS (pub points), POP (popularity) columns
+- Banner updated to v2.0.0
 
 ## [1.0.1] - 2024-01-02
 
 ### Fixed
-- Fixed dartdoc angle bracket HTML warning in `Result<T>` comments
-- Added `example/example.dart` for pub.dev package score
-- Fixed placeholder GitHub URL in `pubspec.yaml`
+- Fixed dartdoc angle bracket HTML warning in Result<T> comments
+- Added example/example.dart for pub.dev package score
+- Fixed placeholder GitHub URL in pubspec.yaml
 
 ## [1.0.0] - 2024-01-01
 
 ### Added
 - Initial release
-- Read `dependencies` and `dev_dependencies` from `pubspec.yaml`
-- Fetch latest versions from pub.dev API
-- Compare current version constraints vs latest versions
-- Colored console table output with `✔ Up to date` / `✖ Outdated` status
-- JSON output format via `--format json` flag
-- `--path` flag to point at any Flutter project
-- `--verbose` flag for debug logging
-- Batched concurrent pub.dev requests (5 at a time) to avoid rate limiting
-- Graceful error handling for network failures and missing packages
-- CI-friendly exit codes (exit `1` if outdated deps found)
-- `fqa` global executable via `dart pub global activate`
+- Dependency version checking via pub.dev API
+- Colored console output and JSON output
+- `fqa` global executable

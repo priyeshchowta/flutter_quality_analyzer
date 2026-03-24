@@ -1,30 +1,17 @@
 import 'dart:convert';
 
 import '../models/version_check_result.dart';
+import '../services/coverage_analyzer.dart';
 import 'reporter.dart';
 
-/// Outputs analysis results as a pretty-printed JSON document to stdout.
+/// Outputs analysis results as pretty-printed JSON.
 ///
-/// Useful for piping results into other tools or CI systems.
-///
-/// Example output:
-/// {
-///   "summary": { "total": 5, "outdated": 2, "upToDate": 3, "failed": 0 },
-///   "packages": [
-///     {
-///       "name": "http",
-///       "current": "^0.13.0",
-///       "latest": "1.2.0",
-///       "status": "outdated"
-///     }
-///   ]
-/// }
+/// Useful for piping into other tools or CI systems.
 class JsonReporter implements Reporter {
   @override
   void report(List<VersionCheckResult> results) {
     final packages = results.map(_resultToMap).toList();
-    final output = {'packages': packages};
-    print(const JsonEncoder.withIndent('  ').convert(output));
+    print(const JsonEncoder.withIndent('  ').convert({'packages': packages}));
   }
 
   @override
@@ -34,15 +21,35 @@ class JsonReporter implements Reporter {
     required int upToDate,
     required int failed,
   }) {
-    final summary = {
+    print(const JsonEncoder.withIndent('  ').convert({
       'summary': {
         'total': total,
         'outdated': outdated,
         'upToDate': upToDate,
         'failed': failed,
-      }
-    };
-    print(const JsonEncoder.withIndent('  ').convert(summary));
+      },
+    }));
+  }
+
+  /// Prints the coverage result as JSON.
+  void printCoverage(CoverageResult coverage) {
+    print(const JsonEncoder.withIndent('  ').convert({
+      'testCoverage': {
+        'hasTestDirectory': coverage.hasTestDirectory,
+        'testFileCount': coverage.testFileCount,
+        'sourceFileCount': coverage.sourceFileCount,
+        'coverageRatio': coverage.coverageRatio,
+        'grade': coverage.grade,
+        'testFiles': coverage.testFiles,
+      },
+    }));
+  }
+
+  /// Prints the AI summary as JSON.
+  void printAiSummary(String summary) {
+    print(const JsonEncoder.withIndent('  ').convert({
+      'aiSummary': summary,
+    }));
   }
 
   Map<String, dynamic> _resultToMap(VersionCheckResult r) {
@@ -55,6 +62,10 @@ class JsonReporter implements Reporter {
           : r.isOutdated
               ? 'outdated'
               : 'up-to-date',
+      'license': r.license,
+      'pubPoints': r.pubPoints,
+      'popularity': r.popularity,
+      'likes': r.likes,
       if (r.error != null) 'error': r.error,
     };
   }

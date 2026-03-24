@@ -5,18 +5,11 @@ import '../models/version_check_result.dart';
 import '../utils/logger.dart';
 import 'pub_dev_client.dart';
 
-/// Orchestrates version checking for a list of dependencies.
+/// Orchestrates version + license + score checking for all dependencies.
 ///
-/// For each [DependencyInfo]:
-///   1. Fetches the latest version from pub.dev via [PubDevClient].
-///   2. Compares the current constraint against the latest version.
-///   3. Returns a [VersionCheckResult] per package.
-///
-/// Requests are made concurrently using [Future.wait] for performance.
+/// Requests are batched concurrently to avoid rate limiting pub.dev.
 class VersionChecker {
   /// Checks all [dependencies] against pub.dev concurrently.
-  ///
-  /// [concurrency] limits how many requests fly at once to avoid rate limiting.
   Future<List<VersionCheckResult>> checkAll({
     required List<DependencyInfo> dependencies,
     required PubDevClient client,
@@ -24,7 +17,6 @@ class VersionChecker {
   }) async {
     final results = <VersionCheckResult>[];
 
-    // Process in batches to respect pub.dev rate limits
     for (var i = 0; i < dependencies.length; i += concurrency) {
       final batch = dependencies.skip(i).take(concurrency).toList();
 
@@ -43,12 +35,12 @@ class VersionChecker {
     return results;
   }
 
-  /// Checks a single [dependency] against pub.dev.
+  /// Fetches full package info and builds a [VersionCheckResult].
   Future<VersionCheckResult> _checkOne(
     DependencyInfo dependency,
     PubDevClient client,
   ) async {
-    final fetchResult = await client.fetchLatestVersion(dependency.name);
+    final fetchResult = await client.fetchPackageInfo(dependency.name);
 
     if (fetchResult.isFailure) {
       Logger.warn('Could not check ${dependency.name}: ${fetchResult.error}');
@@ -59,32 +51,29 @@ class VersionChecker {
       );
     }
 
-    final latestVersion = fetchResult.value!.latestVersion;
+    final info = fetchResult.value!;
     final isOutdated = _isOutdated(
       constraint: dependency.versionConstraint,
-      latestVersion: latestVersion,
+      latestVersion: info.latestVersion,
     );
 
     return VersionCheckResult(
       packageName: dependency.name,
       currentConstraint: dependency.versionConstraint,
-      latestVersion: latestVersion,
+      latestVersion: info.latestVersion,
       isOutdated: isOutdated,
+      license: info.license,
+      pubPoints: info.pubPoints,
+      popularity: info.popularity,
+      likes: info.likes,
     );
   }
 
   /// Returns true if [latestVersion] is NOT satisfied by [constraint].
-  ///
-  /// Examples:
-  ///   constraint: "^0.13.0",  latest: "1.2.0"  → true  (outdated)
-  ///   constraint: "^1.2.0",   latest: "1.2.0"  → false (up to date)
-  ///   constraint: "any",       latest: "1.0.0"  → false (any always matches)
-  ///   constraint: null,        latest: "1.0.0"  → false (assume pinned via lock)
   bool _isOutdated({
     required String? constraint,
     required String latestVersion,
   }) {
-    // No constraint specified — can't reliably determine outdatedness
     if (constraint == null || constraint == 'any' || constraint.isEmpty) {
       return false;
     }
@@ -95,16 +84,12 @@ class VersionChecker {
       return !versionConstraint.allows(latest);
     } catch (e) {
       Logger.debug(
-        'Could not parse version for comparison. '
-        'constraint="$constraint", latest="$latestVersion": $e',
+        'Could not parse version. constraint="$constraint", latest="$latestVersion": $e',
       );
-      // Fall back to string inequality — at minimum flag it if clearly different
       return _stripCaret(constraint) != latestVersion;
     }
   }
 
-  /// Strips common version prefixes like `^`, `>=`, `~` for a rough string comparison.
-  String _stripCaret(String version) {
-    return version.replaceAll(RegExp(r'^[\^~>=<]+'), '').trim();
-  }
+  String _stripCaret(String version) =>
+      version.replaceAll(RegExp(r'^[\^~>=<]+'), '').trim();
 }

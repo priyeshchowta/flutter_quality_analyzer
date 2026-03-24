@@ -4,28 +4,30 @@ import 'package:args/args.dart';
 import 'package:flutter_quality_analyzer/src/services/pubspec_reader.dart';
 import 'package:flutter_quality_analyzer/src/services/pub_dev_client.dart';
 import 'package:flutter_quality_analyzer/src/services/version_checker.dart';
+import 'package:flutter_quality_analyzer/src/services/coverage_analyzer.dart';
+import 'package:flutter_quality_analyzer/src/services/ai_summary_service.dart';
 import 'package:flutter_quality_analyzer/src/reporters/console_reporter.dart';
 import 'package:flutter_quality_analyzer/src/reporters/json_reporter.dart';
-import 'package:flutter_quality_analyzer/src/reporters/reporter.dart';
 import 'package:flutter_quality_analyzer/src/utils/logger.dart';
 
-/// Entry point for the flutter_quality_analyzer CLI tool.
+/// flutter_quality_analyzer CLI — v2.0.0
 ///
-/// Usage:
-///   dart run bin/flutter_quality_analyzer.dart [options]
-///
-/// Options:
-///   --path    (-p)  Path to the Flutter project directory (default: current directory)
-///   --format  (-f)  Output format: console (default) or json
-///   --verbose (-v)  Enable verbose/debug logging
-///   --help    (-h)  Show usage information
+/// Usage examples:
+///   dart run flutter_quality_analyzer
+///   dart run flutter_quality_analyzer --coverage
+///   dart run flutter_quality_analyzer --ai-summary --gemini-key YOUR_KEY
+///   dart run flutter_quality_analyzer --coverage --ai-summary --gemini-key YOUR_KEY
+///   dart run flutter_quality_analyzer --path /other/project --coverage
 void main(List<String> arguments) async {
   final parser = ArgParser()
     ..addOption(
       'path',
       abbr: 'p',
-      defaultsTo: '.',
-      help: 'Path to the Flutter project directory containing pubspec.yaml',
+      // Defaults to current working directory — which is the user's
+      // Flutter project root when run via `dart run flutter_quality_analyzer`
+      defaultsTo: Directory.current.path,
+      help: 'Path to the Flutter project directory. '
+          'Defaults to current directory.',
     )
     ..addOption(
       'format',
@@ -37,6 +39,27 @@ void main(List<String> arguments) async {
         'json': 'Machine-readable JSON output',
       },
       help: 'Output format',
+    )
+    ..addOption(
+      'gemini-key',
+      help: 'Gemini API key for AI summary. '
+          'Can also be set via GEMINI_API_KEY environment variable. '
+          'Get a free key at https://aistudio.google.com/app/apikey',
+    )
+    ..addFlag(
+      'coverage',
+      abbr: 'c',
+      defaultsTo: false,
+      negatable: false,
+      help: 'Analyze test coverage (counts test files vs source files)',
+    )
+    ..addFlag(
+      'ai-summary',
+      abbr: 'a',
+      defaultsTo: false,
+      negatable: false,
+      help: 'Generate AI health summary via Gemini '
+          '(requires --gemini-key or GEMINI_API_KEY env variable)',
     )
     ..addFlag(
       'verbose',
@@ -68,21 +91,39 @@ void main(List<String> arguments) async {
     exit(0);
   }
 
+  // Use current working directory as default path.
+  // When user runs `dart run flutter_quality_analyzer` from inside
+  // their Flutter project, this automatically points to their project.
   final projectPath = args['path'] as String;
-  final format = args['format'] as String;
-  final verbose = args['verbose'] as bool;
+  final format      = args['format'] as String;
+  final verbose     = args['verbose'] as bool;
+  final doCoverage  = args['coverage'] as bool;
+  final doAiSummary = args['ai-summary'] as bool;
+
+  // Gemini key priority:
+  //   1. --gemini-key flag (explicit)
+  //   2. GEMINI_API_KEY environment variable (recommended)
+  //   3. Empty string (AI summary will be skipped with a helpful message)
+  final geminiKey = (args['gemini-key'] as String?)?.trim().isNotEmpty == true
+      ? args['gemini-key'] as String
+      : Platform.environment['GEMINI_API_KEY'] ?? '';
 
   Logger.isVerbose = verbose;
 
-  // Only print banner for console format — keep JSON stdout clean for piping
   if (format == 'console') _printBanner();
 
-  // --- Step 1: Read pubspec.yaml ---
-  final pubspecReader = PubspecReader();
-  final pubspecResult = pubspecReader.read(projectPath);
+  // ─── Step 1: Read pubspec.yaml ────────────────────────────────────────────
+  if (format == 'console') {
+    Logger.debug('Looking for pubspec.yaml in: $projectPath');
+  }
 
+  final pubspecResult = PubspecReader().read(projectPath);
   if (pubspecResult.isFailure) {
     Logger.error(pubspecResult.error!);
+    Logger.error(
+      'Make sure you run this command from inside your Flutter project, '
+      'or pass the correct path with --path /your/project',
+    );
     exit(1);
   }
 
@@ -98,48 +139,93 @@ void main(List<String> arguments) async {
     exit(0);
   }
 
-  // --- Step 2: Fetch latest versions from pub.dev ---
+  // ─── Step 2: Version + license + pub score ────────────────────────────────
   final pubDevClient = PubDevClient();
-  final versionChecker = VersionChecker();
-
   if (format == 'console') {
-    Logger.info('Fetching latest versions from pub.dev...\n');
+    Logger.info('Fetching versions, licenses & scores from pub.dev...\n');
   }
 
-  final results = await versionChecker.checkAll(
+  final results = await VersionChecker().checkAll(
     dependencies: pubspec.dependencies,
     client: pubDevClient,
   );
-
   pubDevClient.dispose();
 
-  // --- Step 3: Render output ---
-  final Reporter reporter =
-      format == 'json' ? JsonReporter() : ConsoleReporter();
+  // ─── Step 3: Test coverage ────────────────────────────────────────────────
+  final coverage = doCoverage
+      ? CoverageAnalyzer().analyze(projectPath)
+      : null;
 
-  reporter.report(results);
+  // ─── Step 4: AI Summary ───────────────────────────────────────────────────
+  String? aiSummary;
+  if (doAiSummary) {
+    if (geminiKey.isEmpty) {
+      Logger.warn(
+        'AI summary skipped — no Gemini API key found.\n'
+        '  Option 1: dart run flutter_quality_analyzer --ai-summary --gemini-key YOUR_KEY\n'
+        '  Option 2: export GEMINI_API_KEY=YOUR_KEY  (then just use --ai-summary)\n'
+        '  Get a free key at: https://aistudio.google.com/app/apikey',
+      );
+    } else {
+      if (format == 'console') {
+        Logger.info('Generating AI health summary via Gemini...\n');
+      }
 
+      final aiService = AiSummaryService();
+      final summaryResult = await aiService.generateSummary(
+        apiKey: geminiKey,
+        projectName: pubspec.projectName,
+        results: results,
+        coverage: coverage ?? CoverageAnalyzer().analyze(projectPath),
+      );
+      aiService.dispose();
+
+      if (summaryResult.isFailure) {
+        Logger.warn('AI summary failed: ${summaryResult.error}');
+      } else {
+        aiSummary = summaryResult.value;
+      }
+    }
+  }
+
+  // ─── Step 5: Report output ────────────────────────────────────────────────
   final outdated = results.where((r) => r.isOutdated).length;
-  final upToDate =
-      results.where((r) => !r.isOutdated && r.latestVersion != null).length;
-  final failed = results.where((r) => r.latestVersion == null).length;
+  final upToDate = results.where((r) => !r.isOutdated && r.error == null).length;
+  final failed   = results.where((r) => r.error != null).length;
 
-  reporter.printSummary(
-    total: results.length,
-    outdated: outdated,
-    upToDate: upToDate,
-    failed: failed,
-  );
+  if (format == 'json') {
+    final reporter = JsonReporter();
+    reporter.report(results);
+    reporter.printSummary(
+      total: results.length,
+      outdated: outdated,
+      upToDate: upToDate,
+      failed: failed,
+    );
+    if (coverage != null) reporter.printCoverage(coverage);
+    if (aiSummary != null) reporter.printAiSummary(aiSummary);
+  } else {
+    final reporter = ConsoleReporter();
+    reporter.report(results);
+    reporter.printSummary(
+      total: results.length,
+      outdated: outdated,
+      upToDate: upToDate,
+      failed: failed,
+    );
+    if (coverage != null) reporter.printCoverage(coverage);
+    if (aiSummary != null) reporter.printAiSummary(aiSummary);
+  }
 
-  // Non-zero exit if outdated deps exist — makes this CI-friendly
+  // Non-zero exit if outdated deps exist — CI friendly
   exit(outdated > 0 ? 1 : 0);
 }
 
 void _printBanner() {
   print('''
 ╔══════════════════════════════════════════════╗
-║       Flutter Quality Analyzer  v1.0.0       ║
-║       Dependency Health Check Tool           ║
+║       Flutter Quality Analyzer  v2.0.0       ║
+║  Versions · Licenses · Coverage · AI Summary ║
 ╚══════════════════════════════════════════════╝
 ''');
 }

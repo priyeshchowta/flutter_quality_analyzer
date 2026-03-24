@@ -1,6 +1,6 @@
 name: flutter_quality_analyzer
 description: A CLI tool that analyzes Flutter project dependencies and checks for outdated packages using the pub.dev API.
-version: 1.0.0
+version: 1.0.1
 homepage: https://github.com/priyeshchowta/flutter_quality_analyzer
 repository: https://github.com/priyeshchowta/flutter_quality_analyzer
 

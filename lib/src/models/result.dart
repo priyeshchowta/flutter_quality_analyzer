@@ -1,11 +1,13 @@
 /// A simple Result type to represent success or failure without throwing exceptions.
 ///
 /// Usage:
-///   Result<String> result = Result.success('hello');
-///   Result<String> fail   = Result.failure('Something went wrong');
+/// ```dart
+/// Result<String> result = Result.success('hello');
+/// Result<String> fail   = Result.failure('Something went wrong');
 ///
-///   if (result.isSuccess) print(result.value);
-///   if (fail.isFailure)   print(fail.error);
+/// if (result.isSuccess) print(result.value);
+/// if (fail.isFailure)   print(fail.error);
+/// ```
 class Result<T> {
   final T? value;
   final String? error;

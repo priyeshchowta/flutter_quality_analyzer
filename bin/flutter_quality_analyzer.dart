@@ -10,7 +10,7 @@ import 'package:flutter_quality_analyzer/src/reporters/console_reporter.dart';
 import 'package:flutter_quality_analyzer/src/reporters/json_reporter.dart';
 import 'package:flutter_quality_analyzer/src/utils/logger.dart';
 
-/// flutter_quality_analyzer CLI — v2.0.0
+/// flutter_quality_analyzer CLI — v2.1.0
 ///
 /// Usage examples:
 ///   dart run flutter_quality_analyzer
@@ -46,6 +46,20 @@ void main(List<String> arguments) async {
           'Can also be set via GEMINI_API_KEY environment variable. '
           'Get a free key at https://aistudio.google.com/app/apikey',
     )
+    ..addOption(
+      'ai-provider',
+      help: 'AI provider to use (gemini | groq)',
+      defaultsTo: 'gemini',
+      allowed: ['gemini', 'groq'],
+      allowedHelp: {
+        'gemini': 'Google Gemini (default)',
+        'groq': 'Groq (free, fast)',
+      },
+    )
+    ..addOption(
+      'groq-key',
+      help: 'Groq API key. Get a free key at https://console.groq.com',
+    )
     ..addFlag(
       'coverage',
       abbr: 'c',
@@ -58,8 +72,7 @@ void main(List<String> arguments) async {
       abbr: 'a',
       defaultsTo: false,
       negatable: false,
-      help: 'Generate AI health summary via Gemini '
-          '(requires --gemini-key or GEMINI_API_KEY env variable)',
+      help: 'Generate AI health summary',
     )
     ..addFlag(
       'verbose',
@@ -100,10 +113,10 @@ void main(List<String> arguments) async {
   final doCoverage  = args['coverage'] as bool;
   final doAiSummary = args['ai-summary'] as bool;
 
-  // Gemini key priority:
-  //   1. --gemini-key flag (explicit)
-  //   2. GEMINI_API_KEY environment variable (recommended)
-  //   3. Empty string (AI summary will be skipped with a helpful message)
+  // ✅ ADD THIS
+  final aiProvider = args['ai-provider'] as String;
+  final groqKey    = args['groq-key'] as String?;
+
   final geminiKey = (args['gemini-key'] as String?)?.trim().isNotEmpty == true
       ? args['gemini-key'] as String
       : Platform.environment['GEMINI_API_KEY'] ?? '';
@@ -111,11 +124,6 @@ void main(List<String> arguments) async {
   Logger.isVerbose = verbose;
 
   if (format == 'console') _printBanner();
-
-  // ─── Step 1: Read pubspec.yaml ────────────────────────────────────────────
-  if (format == 'console') {
-    Logger.debug('Looking for pubspec.yaml in: $projectPath');
-  }
 
   final pubspecResult = PubspecReader().read(projectPath);
   if (pubspecResult.isFailure) {
@@ -139,7 +147,6 @@ void main(List<String> arguments) async {
     exit(0);
   }
 
-  // ─── Step 2: Version + license + pub score ────────────────────────────────
   final pubDevClient = PubDevClient();
   if (format == 'console') {
     Logger.info('Fetching versions, licenses & scores from pub.dev...\n');
@@ -151,34 +158,35 @@ void main(List<String> arguments) async {
   );
   pubDevClient.dispose();
 
-  // ─── Step 3: Test coverage ────────────────────────────────────────────────
   final coverage = doCoverage
       ? CoverageAnalyzer().analyze(projectPath)
       : null;
 
-  // ─── Step 4: AI Summary ───────────────────────────────────────────────────
+  // ─── AI Summary ─────────────────────────────────────────────
   String? aiSummary;
   if (doAiSummary) {
-    if (geminiKey.isEmpty) {
-      Logger.warn(
-        'AI summary skipped — no Gemini API key found.\n'
-        '  Option 1: dart run flutter_quality_analyzer --ai-summary --gemini-key YOUR_KEY\n'
-        '  Option 2: export GEMINI_API_KEY=YOUR_KEY  (then just use --ai-summary)\n'
-        '  Get a free key at: https://aistudio.google.com/app/apikey',
-      );
+    if (aiProvider == 'gemini' && geminiKey.isEmpty) {
+      Logger.warn('Missing --gemini-key');
+    } else if (aiProvider == 'groq' &&
+        (groqKey == null || groqKey.isEmpty)) {
+      Logger.warn('Missing --groq-key');
+      exit(1);
     } else {
       if (format == 'console') {
-        Logger.info('Generating AI health summary via Gemini...\n');
+        Logger.info('Generating AI health summary via $aiProvider...\n');
       }
 
       final aiService = AiSummaryService();
+
+      // ✅ UPDATED CALL
       final summaryResult = await aiService.generateSummary(
-        apiKey: geminiKey,
         projectName: pubspec.projectName,
         results: results,
         coverage: coverage ?? CoverageAnalyzer().analyze(projectPath),
+        provider: aiProvider,
+        geminiKey: geminiKey,
+        groqKey: groqKey,
       );
-      aiService.dispose();
 
       if (summaryResult.isFailure) {
         Logger.warn('AI summary failed: ${summaryResult.error}');
@@ -224,7 +232,7 @@ void main(List<String> arguments) async {
 void _printBanner() {
   print('''
 ╔══════════════════════════════════════════════╗
-║       Flutter Quality Analyzer  v2.0.0       ║
+║       Flutter Quality Analyzer  v2.1.0       ║
 ║  Versions · Licenses · Coverage · AI Summary ║
 ╚══════════════════════════════════════════════╝
 ''');

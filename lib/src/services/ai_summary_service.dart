@@ -1,168 +1,74 @@
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
-
 import '../models/version_check_result.dart';
 import '../models/result.dart';
 import '../utils/logger.dart';
 import 'coverage_analyzer.dart';
 
-/// AI-powered project health summary using Google Gemini API (free tier).
-///
-/// Get your free API key at: https://aistudio.google.com/app/apikey
-/// Free quota: 15 requests/minute, 1 million tokens/day.
+import 'ai_provider_factory.dart';
+
 class AiSummaryService {
-  static const _geminiUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/'
-      'gemini-2.0-flash:generateContent';
-
-  static const _timeout    = Duration(seconds: 30);
-  static const _maxRetries = 3;
-
-  final http.Client _httpClient;
-
-  AiSummaryService({http.Client? httpClient})
-      : _httpClient = httpClient ?? http.Client();
-
-  /// Generates an AI-powered health summary for the project.
-  ///
-  /// Automatically retries up to [_maxRetries] times on rate limit (429).
+  /// Generates AI-powered health summary with provider + fallback support
   Future<Result<String>> generateSummary({
-    required String apiKey,
     required String projectName,
     required List<VersionCheckResult> results,
     required CoverageResult coverage,
-  }) async {
-    if (apiKey.isEmpty) {
-      return Result.failure(
-        'Gemini API key is missing.\n'
-        '  Option 1: Pass via --gemini-key YOUR_KEY\n'
-        '  Option 2: export GEMINI_API_KEY=YOUR_KEY\n'
-        '  Get a free key at: https://aistudio.google.com/app/apikey',
-      );
-    }
 
+    /// New params
+    required String provider, // gemini | groq
+    String? geminiKey,
+    String? groqKey,
+  }) async {
     final prompt = _buildPrompt(
       projectName: projectName,
       results: results,
       coverage: coverage,
     );
 
-    // Retry loop with exponential backoff for rate limit handling
-    for (var attempt = 1; attempt <= _maxRetries; attempt++) {
-      Logger.debug('Gemini request attempt $attempt of $_maxRetries...');
+    final primaryProvider = AiProviderFactory.create(provider);
 
-      final result = await _sendRequest(apiKey, prompt);
+    final primaryKey = provider == 'groq' ? groqKey : geminiKey;
 
-      // Success — return immediately
-      if (result.isSuccess) return result;
-
-      // Rate limited — wait and retry
-      if (result.error!.contains('rate limit') || result.error!.contains('429')) {
-        if (attempt < _maxRetries) {
-          final waitSeconds = attempt * 30; // 30s, 60s, 90s
-          Logger.warn(
-            'Gemini rate limit hit. '
-            'Retrying in ${waitSeconds}s... '
-            '(attempt $attempt/$_maxRetries)',
-          );
-          await Future.delayed(Duration(seconds: waitSeconds));
-          continue;
-        }
-      }
-
-      // Non-retryable error — return immediately
-      return result;
+    if (primaryKey == null || primaryKey.isEmpty) {
+      return Result.failure(
+        'Missing API key for $provider.\n'
+        'Use --gemini-key or --groq-key',
+      );
     }
 
-    return Result.failure(
-      'Gemini rate limit persists after $_maxRetries attempts. '
-      'Please wait a minute and try again.',
+    Logger.info('Using $provider AI provider...');
+
+    final result = await primaryProvider.generateSummary(
+      prompt: prompt,
+      apiKey: primaryKey,
     );
-  }
 
-  /// Sends a single request to the Gemini API.
-  Future<Result<String>> _sendRequest(String apiKey, String prompt) async {
-    try {
-      final uri = Uri.parse('$_geminiUrl?key=$apiKey');
+    // 🔥 FALLBACK: Gemini → Groq
+    if (!result.isSuccess &&
+        result.error == 'RATE_LIMIT' &&
+        provider == 'gemini' &&
+        groqKey != null &&
+        groqKey.isNotEmpty) {
+      Logger.warn('Gemini rate limited → switching to Groq...');
 
-      final response = await _httpClient
-          .post(
-            uri,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'contents': [
-                {
-                  'parts': [
-                    {'text': prompt}
-                  ]
-                }
-              ],
-              'generationConfig': {
-                'temperature': 0.4,
-                'maxOutputTokens': 600,
-              },
-            }),
-          )
-          .timeout(_timeout);
+      final fallbackProvider = AiProviderFactory.create('groq');
 
-      Logger.debug('Gemini HTTP status: ${response.statusCode}');
+      final fallbackResult = await fallbackProvider.generateSummary(
+        prompt: prompt,
+        apiKey: groqKey,
+      );
 
-      if (response.statusCode == 401) {
-        return Result.failure(
-          'Invalid Gemini API key. '
-          'Get a free key at https://aistudio.google.com/app/apikey',
-        );
+      if (fallbackResult.isSuccess) {
+        Logger.info('Groq summary generated successfully');
+      } else {
+        Logger.error('Groq also failed: ${fallbackResult.error}');
       }
 
-      if (response.statusCode == 429) {
-        return Result.failure('rate limit 429');
-      }
-
-      if (response.statusCode != 200) {
-        return Result.failure('Gemini API error: HTTP ${response.statusCode}');
-      }
-
-      return _parseResponse(response.body);
-    } on Exception catch (e) {
-      return Result.failure('Failed to reach Gemini API: $e');
+      return fallbackResult;
     }
+
+    return result;
   }
 
-  /// Parses the Gemini JSON response and extracts generated text.
-  ///
-  /// Response shape:
-  /// ```json
-  /// {
-  ///   "candidates": [
-  ///     { "content": { "parts": [ { "text": "..." } ] } }
-  ///   ]
-  /// }
-  /// ```
-  Result<String> _parseResponse(String body) {
-    try {
-      final json       = jsonDecode(body) as Map<String, dynamic>;
-      final candidates = json['candidates'] as List<dynamic>?;
-
-      if (candidates == null || candidates.isEmpty) {
-        return Result.failure('Gemini returned no candidates.');
-      }
-
-      final content = candidates[0]['content'] as Map<String, dynamic>?;
-      final parts   = content?['parts'] as List<dynamic>?;
-      final text    = parts?[0]['text'] as String?;
-
-      if (text == null || text.isEmpty) {
-        return Result.failure('Gemini returned empty response.');
-      }
-
-      return Result.success(text.trim());
-    } catch (e) {
-      return Result.failure('Failed to parse Gemini response: $e');
-    }
-  }
-
-  /// Builds a structured prompt from the analysis data.
+  /// Builds structured prompt for AI analysis
   String _buildPrompt({
     required String projectName,
     required List<VersionCheckResult> results,
@@ -216,6 +122,4 @@ Provide exactly:
 Plain text only, no markdown, under 250 words.
 ''';
   }
-
-  void dispose() => _httpClient.close();
 }

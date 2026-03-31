@@ -5,7 +5,6 @@ import 'package:flutter_quality_analyzer/src/services/coverage_analyzer.dart';
 import 'package:flutter_quality_analyzer/src/services/pubspec_reader.dart';
 import 'package:flutter_quality_analyzer/src/utils/version_utils.dart';
 import 'package:test/test.dart';
-import 'package:flutter_quality_analyzer/flutter_quality_analyzer.dart';
 
 void main() {
   // ─── PubspecReader Tests ───────────────────────────────────────────────────

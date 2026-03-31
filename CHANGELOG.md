@@ -1,3 +1,34 @@
+## [2.1.0] - 2026-03-31
+
+### Added
+- Groq AI provider support (`--ai-provider groq --groq-key YOUR_KEY`) as a free
+  alternative to Gemini — uses `llama3-70b-8192` via the OpenAI-compatible API
+- `--ai-provider` CLI flag (`gemini` | `groq`, default: `gemini`) with validation
+- Automatic Gemini → Groq fallback: if Gemini returns a rate-limit error and a
+  `--groq-key` is also supplied, the summary is retried with Groq transparently
+- `AiProvider` abstract interface for provider-agnostic AI calls
+- `AiProviderFactory` — factory that instantiates the correct provider by name
+- `GeminiProvider` — extracted Gemini logic from `AiSummaryService` into its own class
+- `GroqProvider` — new Groq implementation
+
+### Fixed
+- LICENSE column was always `-`: pub.dev removed the `license` field from
+  `latest.pubspec`; license is now correctly parsed from the `tags` array in
+  the score endpoint (e.g. `license:mit` → `MIT`, `license:bsd-3-clause` → `BSD-3-Clause`)
+- Popularity score (`POP`) was always `?`: `popularityScore` was removed from
+  the pub.dev API; popularity is now derived from `downloadCount30Days`
+  (scaled to 0–100, where 1 M+ downloads = 100%)
+- `--ai-provider` flag now validates allowed values (`gemini` | `groq`); invalid
+  values previously silently fell through to Gemini
+- Missing AI key now exits with code 1 instead of silently returning
+
+### Changed
+- `AiSummaryService.generateSummary` signature updated: replaced single `apiKey`
+  param with `provider`, `geminiKey`, and `groqKey` params
+- `AiSummaryService` no longer owns an `http.Client` — each provider manages its own
+- Removed `AiSummaryService.dispose()` (no longer needed)
+- Banner and help text updated to reflect multi-provider support
+
 ## [2.0.1] - 2024-01-04
 
 ### Fixed

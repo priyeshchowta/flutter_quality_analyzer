@@ -94,16 +94,14 @@ class PubDevClient {
         return Result.failure('Could not extract version for "$packageName".');
       }
 
-      // License lives inside latest.pubspec.license
-      // e.g. "MIT" / "BSD-3-Clause" / "Apache-2.0"
-      final pubspecMap = latest['pubspec'] as Map<String, dynamic>?;
-      final license    = pubspecMap?['license'] as String?;
-
       // ── Parse score response ─────────────────────────────────────────────
-      // Shape: { "grantedPoints": 140, "popularityScore": 0.98, "likeCount": 120 }
+      // Shape: { "grantedPoints": 140, "likeCount": 120,
+      //          "downloadCount30Days": 500000,
+      //          "tags": ["license:mit", "sdk:flutter", ...] }
       int? pubPoints;
       int? popularity;
       int? likes;
+      String? license;
 
       if (scoreBody != null) {
         try {
@@ -112,10 +110,39 @@ class PubDevClient {
           pubPoints = scoreJson['grantedPoints'] as int?;
           likes     = scoreJson['likeCount'] as int?;
 
-          // popularityScore is a double 0.0–1.0 → convert to 0–100 int
-          final popRaw = scoreJson['popularityScore'];
-          if (popRaw != null) {
-            popularity = ((popRaw as num) * 100).round();
+          // popularityScore was removed from pub.dev API — use downloadCount30Days
+          // Bucket downloads into a 0–100 score: 1M+ downloads = 100
+          final downloads = scoreJson['downloadCount30Days'] as int?;
+          if (downloads != null) {
+            popularity = (downloads / 10000).clamp(0, 100).round();
+          }
+
+          // License is in tags as "license:mit", "license:bsd-3-clause" etc.
+          // Pick the first SPDX-style license tag (skip meta tags like fsf-libre, osi-approved)
+          final tags = (scoreJson['tags'] as List<dynamic>?)?.cast<String>() ?? [];
+          final licenseTag = tags
+              .where((t) => t.startsWith('license:'))
+              .where((t) => !const {'license:fsf-libre', 'license:osi-approved', 'license:gpl-compatible'}.contains(t))
+              .firstOrNull;
+          if (licenseTag != null) {
+            // Convert "license:bsd-3-clause" → proper SPDX casing
+            // Known SPDX identifiers we normalise explicitly; fallback to upper-case
+            final raw = licenseTag.replaceFirst('license:', '');
+            const spdxMap = {
+              'mit': 'MIT',
+              'apache-2.0': 'Apache-2.0',
+              'bsd-2-clause': 'BSD-2-Clause',
+              'bsd-3-clause': 'BSD-3-Clause',
+              'lgpl-2.0': 'LGPL-2.0',
+              'lgpl-2.1': 'LGPL-2.1',
+              'lgpl-3.0': 'LGPL-3.0',
+              'gpl-2.0': 'GPL-2.0',
+              'gpl-3.0': 'GPL-3.0',
+              'mpl-2.0': 'MPL-2.0',
+              'isc': 'ISC',
+              'unlicense': 'Unlicense',
+            };
+            license = spdxMap[raw] ?? raw.toUpperCase();
           }
         } catch (e) {
           Logger.debug('Could not parse score for $packageName: $e');

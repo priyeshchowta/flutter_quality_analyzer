@@ -1,3 +1,16 @@
+# Changelog
+
+All notable changes to `flutter_quality_analyzer` are documented here.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+
+## [2.2.1] - 2026-03-31
+
+### Changed
+- Completely rewrote README to showcase all v2.2.0 features: sample output table,
+  full command reference, security / fix / discontinued / AI provider examples,
+  API key setup links, and exit-code table
+- Updated `pubspec.yaml` description to reflect the full current feature set
+
 ## [2.2.0] - 2026-03-31
 
 ### Added
@@ -77,8 +90,6 @@
 - Version comparison now handles build metadata (e.g. `6.1.5+1`) correctly
 - Gemini rate limit now retries automatically (up to 3 times, 30s apart)
   instead of failing immediately
-
-# Changelog
 
 ## [2.0.0] - 2024-01-03
 

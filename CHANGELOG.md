@@ -1,8 +1,19 @@
+## [2.1.1] - 2026-03-31
+
+### Fixed
+- Groq AI summary was failing with `error 400`: switched from deprecated
+  `llama3-70b-8192` (8k context) to `llama-3.3-70b-versatile` (131k context)
+- AI prompt now trims large package lists: outdated + failed packages are always
+  included; up-to-date packages capped at 15 to keep token usage lean across
+  all providers
+- Groq error responses now surface the actual error message from the API body
+  instead of just the HTTP status code, making failures easier to diagnose
+
 ## [2.1.0] - 2026-03-31
 
 ### Added
 - Groq AI provider support (`--ai-provider groq --groq-key YOUR_KEY`) as a free
-  alternative to Gemini — uses `llama3-70b-8192` via the OpenAI-compatible API
+  alternative to Gemini — uses `llama-3.3-70b-versatile` via the OpenAI-compatible API
 - `--ai-provider` CLI flag (`gemini` | `groq`, default: `gemini`) with validation
 - Automatic Gemini → Groq fallback: if Gemini returns a rate-limit error and a
   `--groq-key` is also supplied, the summary is retried with Groq transparently

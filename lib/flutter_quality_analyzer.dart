@@ -219,7 +219,7 @@ void main(List<String> arguments) async {
 void _printBanner() {
   print('''
 ╔══════════════════════════════════════════════╗
-║       Flutter Quality Analyzer  v2.1.0       ║
+║       Flutter Quality Analyzer  v2.1.1       ║
 ║  Versions · Licenses · Coverage · AI Summary ║
 ╚══════════════════════════════════════════════╝
 ''');

@@ -10,7 +10,7 @@ import 'package:flutter_quality_analyzer/src/reporters/console_reporter.dart';
 import 'package:flutter_quality_analyzer/src/reporters/json_reporter.dart';
 import 'package:flutter_quality_analyzer/src/utils/logger.dart';
 
-/// flutter_quality_analyzer CLI — v2.1.0
+/// flutter_quality_analyzer CLI — v2.1.1
 ///
 /// Usage examples:
 ///   dart run flutter_quality_analyzer
@@ -232,7 +232,7 @@ void main(List<String> arguments) async {
 void _printBanner() {
   print('''
 ╔══════════════════════════════════════════════╗
-║       Flutter Quality Analyzer  v2.1.0       ║
+║       Flutter Quality Analyzer  v2.1.1       ║
 ║  Versions · Licenses · Coverage · AI Summary ║
 ╚══════════════════════════════════════════════╝
 ''');

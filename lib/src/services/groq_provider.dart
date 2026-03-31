@@ -26,7 +26,7 @@ class GroqProvider implements AiProvider {
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
-          'model': 'llama3-70b-8192',
+          'model': 'llama-3.3-70b-versatile',
           'messages': [
             {'role': 'user', 'content': prompt}
           ],
@@ -42,7 +42,17 @@ class GroqProvider implements AiProvider {
       }
 
       if (response.statusCode != 200) {
-        return Result.failure('Groq error ${response.statusCode}');
+        // Surface the actual error message from Groq for easier debugging
+        String detail = '';
+        try {
+          final errJson = jsonDecode(response.body) as Map<String, dynamic>;
+          detail = errJson['error']?['message'] as String? ?? '';
+        } catch (_) {}
+        final msg = detail.isNotEmpty
+            ? 'Groq error ${response.statusCode}: $detail'
+            : 'Groq error ${response.statusCode}';
+        Logger.debug('Groq response body: ${response.body}');
+        return Result.failure(msg);
       }
 
       final json = jsonDecode(response.body);

@@ -76,18 +76,30 @@ class AiSummaryService {
   }) {
     final outdated = results.where((r) => r.isOutdated).toList();
     final failed   = results.where((r) => r.error != null).toList();
+    final upToDate = results.where((r) => !r.isOutdated && r.error == null).toList();
+
+    // Keep prompt concise: prioritise outdated + failed, then up-to-date up to 15
+    const maxUpToDate = 15;
+    final packagesToShow = [
+      ...outdated,
+      ...failed,
+      ...upToDate.take(maxUpToDate),
+    ];
+    final truncated = results.length > packagesToShow.length;
 
     final depDetails = StringBuffer();
-    for (final r in results) {
+    for (final r in packagesToShow) {
       depDetails.writeln(
         '- ${r.packageName}: '
         'current=${r.currentConstraint ?? "any"}, '
         'latest=${r.latestVersion ?? "unknown"}, '
         'outdated=${r.isOutdated}, '
         'license=${r.license ?? "unknown"}, '
-        'pubPoints=${r.pubPoints ?? "?"}, '
-        'popularity=${r.popularity != null ? "${r.popularity}%" : "?"}',
+        'pubPoints=${r.pubPoints ?? "?"}',
       );
+    }
+    if (truncated) {
+      depDetails.writeln('  (${results.length - packagesToShow.length} more up-to-date packages omitted for brevity)');
     }
 
     final licenses = results

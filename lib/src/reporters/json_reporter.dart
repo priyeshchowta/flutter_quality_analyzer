@@ -20,12 +20,16 @@ class JsonReporter implements Reporter {
     required int outdated,
     required int upToDate,
     required int failed,
+    int discontinued = 0,
+    int vulnerable = 0,
   }) {
     print(const JsonEncoder.withIndent('  ').convert({
       'summary': {
         'total': total,
         'outdated': outdated,
         'upToDate': upToDate,
+        'discontinued': discontinued,
+        'vulnerable': vulnerable,
         'failed': failed,
       },
     }));
@@ -59,13 +63,19 @@ class JsonReporter implements Reporter {
       'latest': r.latestVersion,
       'status': r.error != null
           ? 'error'
-          : r.isOutdated
-              ? 'outdated'
-              : 'up-to-date',
+          : r.isDiscontinued
+              ? 'discontinued'
+              : r.isOutdated
+                  ? 'outdated'
+                  : 'up-to-date',
       'license': r.license,
       'pubPoints': r.pubPoints,
       'popularity': r.popularity,
       'likes': r.likes,
+      'isDiscontinued': r.isDiscontinued,
+      if (r.replacedBy != null) 'replacedBy': r.replacedBy,
+      'vulnerabilityCount': r.vulnerabilityCount,
+      if (r.highestSeverity != null) 'highestSeverity': r.highestSeverity,
       if (r.error != null) 'error': r.error,
     };
   }

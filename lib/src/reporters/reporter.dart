@@ -22,5 +22,7 @@ abstract class Reporter {
     required int outdated,
     required int upToDate,
     required int failed,
+    int discontinued = 0,
+    int vulnerable = 0,
   });
 }

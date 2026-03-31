@@ -1,3 +1,32 @@
+## [2.2.0] - 2026-03-31
+
+### Added
+- **Discontinued package detection** — pub.dev `isDiscontinued` flag is now
+  checked for every package; discontinued packages are shown as `⛔ Discontinued`
+  in the table with a `→ use <replacement>` hint when available
+- **Security vulnerability check (`--security` / `-s`)** — queries the free
+  [OSV API](https://osv.dev/) (no key needed) in a single batch request;
+  vulnerable packages are flagged as `🔒 VULN (HIGH)` in the table with severity
+  graded from CVSSv3 scores (CRITICAL / HIGH / MEDIUM / LOW); a dedicated
+  Security section is printed in the console summary
+- **Auto-fix outdated constraints (`--fix`)** — rewrites version constraints
+  for all outdated packages in `pubspec.yaml` to `^<latestVersion>` in-place,
+  preserving all comments and formatting; run `dart pub get` afterwards to apply
+- **Dry-run mode (`--dry-run`)** — preview `--fix` changes without writing
+  to disk; prints exactly which constraints would be updated
+- `VulnerabilityResult` and `Vulnerability` models in `src/models/`
+- `OsvClient` service in `src/services/` (batch OSV API, no key required)
+- `FixService` service in `src/services/` (in-place pubspec.yaml rewrite)
+- Summary now shows `⛔ Discontinued` and `🔒 Vulnerable` counts
+- CI exit code now non-zero when discontinued or vulnerable packages are found
+
+### Changed
+- `ConsoleReporter.printSummary` gains `discontinued` and `vulnerable` named params
+- `JsonReporter.printSummary` gains `discontinued` and `vulnerable` named params
+- `JsonReporter._resultToMap` includes `isDiscontinued`, `replacedBy`,
+  `vulnerabilityCount`, `highestSeverity` fields
+- Table STATUS column prioritises: Error → Discontinued → Vulnerable → Outdated → OK
+
 ## [2.1.1] - 2026-03-31
 
 ### Fixed

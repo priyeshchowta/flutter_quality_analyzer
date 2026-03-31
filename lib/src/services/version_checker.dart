@@ -62,6 +62,8 @@ class VersionChecker {
       pubPoints: info.pubPoints,
       popularity: info.popularity,
       likes: info.likes,
+      isDiscontinued: info.isDiscontinued,
+      replacedBy: info.replacedBy,
     );
   }
 

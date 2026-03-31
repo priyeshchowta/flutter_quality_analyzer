@@ -13,6 +13,8 @@ class PubDevPackageInfo {
   final int? pubPoints;
   final int? popularity;
   final int? likes;
+  final bool isDiscontinued;
+  final String? replacedBy;
 
   const PubDevPackageInfo({
     required this.packageName,
@@ -21,6 +23,8 @@ class PubDevPackageInfo {
     this.pubPoints,
     this.popularity,
     this.likes,
+    this.isDiscontinued = false,
+    this.replacedBy,
   });
 }
 
@@ -94,6 +98,10 @@ class PubDevClient {
         return Result.failure('Could not extract version for "$packageName".');
       }
 
+      // isDiscontinued / replacedBy live at the top level of the package response
+      final isDiscontinued = mainJson['isDiscontinued'] as bool? ?? false;
+      final replacedBy     = mainJson['replacedBy'] as String?;
+
       // ── Parse score response ─────────────────────────────────────────────
       // Shape: { "grantedPoints": 140, "likeCount": 120,
       //          "downloadCount30Days": 500000,
@@ -164,6 +172,8 @@ class PubDevClient {
         pubPoints: pubPoints,
         popularity: popularity,
         likes: likes,
+        isDiscontinued: isDiscontinued,
+        replacedBy: replacedBy,
       ));
     } catch (e) {
       return Result.failure('Failed to parse pub.dev response for "$packageName": $e');

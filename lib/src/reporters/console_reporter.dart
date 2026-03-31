@@ -53,16 +53,21 @@ class ConsoleReporter implements Reporter {
     required int outdated,
     required int upToDate,
     required int failed,
+    int discontinued = 0,
+    int vulnerable = 0,
   }) {
-    print('${_bold}── Dependency Summary ───────────────────$_reset');
+    print('${_bold}── Dependency Summary ─────────────────────$_reset');
     print('  Total checked : $total');
     print('  $_green✔ Up to date$_reset   : $upToDate');
     print('  ${_red}✖ Outdated$_reset    : $outdated');
-    if (failed > 0) print('  ${_yellow}⚠ Failed$_reset      : $failed');
+    if (discontinued > 0) print('  ${_red}⛔ Discontinued$_reset : $discontinued');
+    if (vulnerable   > 0) print('  ${_red}🔒 Vulnerable$_reset   : $vulnerable');
+    if (failed       > 0) print('  ${_yellow}⚠ Failed$_reset      : $failed');
     print('');
     if (outdated > 0) {
       print('${_yellow}Run `dart pub upgrade` to update your dependencies.$_reset');
-    } else if (outdated == 0 && failed == 0) {
+      print('${_yellow}Or run with --fix to auto-update pubspec.yaml.$_reset');
+    } else if (outdated == 0 && failed == 0 && discontinued == 0 && vulnerable == 0) {
       print('${_green}All dependencies are up to date! 🎉$_reset');
     }
     print('');
@@ -93,12 +98,51 @@ class ConsoleReporter implements Reporter {
   }
 
   /// Prints the AI-generated summary section.
-  void printAiSummary(String summary) {
-    print('${_bold}── AI Health Summary (Gemini) ───────────$_reset');
+  void printAiSummary(String summary, {String provider = 'AI'}) {
+    final label = provider == 'groq' ? 'Groq' : provider == 'gemini' ? 'Gemini' : provider;
+    print('${_bold}── AI Health Summary ($label) ────────$_reset');
     print('');
-    // Indent each line for clean formatting
     for (final line in summary.split('\n')) {
       print('  $line');
+    }
+    print('');
+  }
+
+  /// Prints a security vulnerability section.
+  void printSecurity(List<VersionCheckResult> results) {
+    final vulnerable = results.where((r) => (r.vulnerabilityCount ?? 0) > 0).toList();
+    if (vulnerable.isEmpty) {
+      print('${_bold}── Security ─────────────────────────────$_reset');
+      print('  ${_green}✔ No known vulnerabilities found.$_reset');
+      print('');
+      return;
+    }
+    print('${_bold}── Security ─────────────────────────────$_reset');
+    for (final r in vulnerable) {
+      final sevColor = r.highestSeverity == 'CRITICAL' || r.highestSeverity == 'HIGH'
+          ? _red : _yellow;
+      print(
+        '  $sevColor🔒 ${r.packageName}$_reset'
+        ' — ${r.vulnerabilityCount} vuln(s), highest: $sevColor${r.highestSeverity}$_reset',
+      );
+    }
+    print('');
+  }
+
+  /// Prints the result of --fix.
+  void printFixResult(List<String> updated, {bool dryRun = false}) {
+    final prefix = dryRun ? '${_yellow}[DRY RUN]$_reset ' : '';
+    print('${_bold}── Auto-fix Results ────────────────────$_reset');
+    if (updated.isEmpty) {
+      print('  ${_green}Nothing to fix — all packages are up to date.$_reset');
+    } else {
+      for (final pkg in updated) {
+        print('  ${_green}✔$_reset $prefix Updated $pkg');
+      }
+      if (!dryRun) {
+        print('');
+        print('  ${_cyan}pubspec.yaml updated. Run `dart pub get` to apply.$_reset');
+      }
     }
     print('');
   }
@@ -129,6 +173,15 @@ class ConsoleReporter implements Reporter {
       statusLabel = '⚠ Error';
       statusColor = _yellow;
       pkgColor    = _dim;
+    } else if (r.isDiscontinued) {
+      statusLabel = '⛔ Discontinued';
+      statusColor = _red;
+      pkgColor    = _red;
+    } else if ((r.vulnerabilityCount ?? 0) > 0) {
+      final sev   = r.highestSeverity ?? 'UNKNOWN';
+      statusLabel = '🔒 VULN ($sev)';
+      statusColor = sev == 'CRITICAL' || sev == 'HIGH' ? _red : _yellow;
+      pkgColor    = _bold;
     } else if (r.isOutdated) {
       statusLabel = '✖ Outdated';
       statusColor = _red;
@@ -157,6 +210,9 @@ class ConsoleReporter implements Reporter {
 
     if (r.error != null) {
       print('    $_dim└─ ${r.error}$_reset');
+    }
+    if (r.isDiscontinued && r.replacedBy != null) {
+      print('    $_dim└─ Use ${r.replacedBy} instead$_reset');
     }
   }
 

@@ -6,11 +6,14 @@ import 'package:flutter_quality_analyzer/src/services/pub_dev_client.dart';
 import 'package:flutter_quality_analyzer/src/services/version_checker.dart';
 import 'package:flutter_quality_analyzer/src/services/coverage_analyzer.dart';
 import 'package:flutter_quality_analyzer/src/services/ai_summary_service.dart';
+import 'package:flutter_quality_analyzer/src/services/osv_client.dart';
+import 'package:flutter_quality_analyzer/src/services/fix_service.dart';
+import 'package:flutter_quality_analyzer/src/models/version_check_result.dart';
 import 'package:flutter_quality_analyzer/src/reporters/console_reporter.dart';
 import 'package:flutter_quality_analyzer/src/reporters/json_reporter.dart';
 import 'package:flutter_quality_analyzer/src/utils/logger.dart';
 
-/// flutter_quality_analyzer CLI — v2.1.1
+/// flutter_quality_analyzer CLI — v2.2.0
 ///
 /// Usage examples:
 ///   dart run flutter_quality_analyzer
@@ -75,6 +78,25 @@ void main(List<String> arguments) async {
       help: 'Generate AI health summary',
     )
     ..addFlag(
+      'security',
+      abbr: 's',
+      defaultsTo: false,
+      negatable: false,
+      help: 'Check packages for known CVEs via OSV API (free, no key needed)',
+    )
+    ..addFlag(
+      'fix',
+      defaultsTo: false,
+      negatable: false,
+      help: 'Auto-update outdated version constraints in pubspec.yaml',
+    )
+    ..addFlag(
+      'dry-run',
+      defaultsTo: false,
+      negatable: false,
+      help: 'Preview --fix changes without writing to pubspec.yaml',
+    )
+    ..addFlag(
       'verbose',
       abbr: 'v',
       defaultsTo: false,
@@ -112,6 +134,9 @@ void main(List<String> arguments) async {
   final verbose     = args['verbose'] as bool;
   final doCoverage  = args['coverage'] as bool;
   final doAiSummary = args['ai-summary'] as bool;
+  final doSecurity  = args['security'] as bool;
+  final doFix       = args['fix'] as bool;
+  final dryRun      = args['dry-run'] as bool;
 
   // ✅ ADD THIS
   final aiProvider = args['ai-provider'] as String;
@@ -158,11 +183,29 @@ void main(List<String> arguments) async {
   );
   pubDevClient.dispose();
 
+  // ─── Security check (OSV) ────────────────────────────────────────────────
+  List<VersionCheckResult> checkedResults = results;
+  if (doSecurity) {
+    if (format == 'console') {
+      Logger.info('Checking for known vulnerabilities via OSV...\n');
+    }
+    final osvMap = await OsvClient().checkAll(results);
+    checkedResults = results.map((r) {
+      final vuln = osvMap[r.packageName];
+      if (vuln == null) return r;
+      return r.copyWith(
+        vulnerabilityCount: vuln.vulnerabilities.length,
+        highestSeverity: vuln.hasVulnerabilities ? vuln.highestSeverity : null,
+      );
+    }).toList().cast<VersionCheckResult>();
+  }
+
+  // ─── Coverage ────────────────────────────────────────────────────────────
   final coverage = doCoverage
       ? CoverageAnalyzer().analyze(projectPath)
       : null;
 
-  // ─── AI Summary ─────────────────────────────────────────────
+  // ─── AI Summary ──────────────────────────────────────────────────────────
   String? aiSummary;
   if (doAiSummary) {
     if (aiProvider == 'gemini' && geminiKey.isEmpty) {
@@ -177,11 +220,9 @@ void main(List<String> arguments) async {
       }
 
       final aiService = AiSummaryService();
-
-      // ✅ UPDATED CALL
       final summaryResult = await aiService.generateSummary(
         projectName: pubspec.projectName,
-        results: results,
+        results: checkedResults,
         coverage: coverage ?? CoverageAnalyzer().analyze(projectPath),
         provider: aiProvider,
         geminiKey: geminiKey,
@@ -196,43 +237,66 @@ void main(List<String> arguments) async {
     }
   }
 
-  // ─── Step 5: Report output ────────────────────────────────────────────────
-  final outdated = results.where((r) => r.isOutdated).length;
-  final upToDate = results.where((r) => !r.isOutdated && r.error == null).length;
-  final failed   = results.where((r) => r.error != null).length;
+  // ─── Report ───────────────────────────────────────────────────────────────
+  final outdated     = checkedResults.where((r) => r.isOutdated).length;
+  final upToDate     = checkedResults.where((r) => !r.isOutdated && r.error == null && !r.isDiscontinued).length;
+  final failed       = checkedResults.where((r) => r.error != null).length;
+  final discontinued = checkedResults.where((r) => r.isDiscontinued).length;
+  final vulnerable   = checkedResults.where((r) => (r.vulnerabilityCount ?? 0) > 0).length;
 
   if (format == 'json') {
     final reporter = JsonReporter();
-    reporter.report(results);
+    reporter.report(checkedResults);
     reporter.printSummary(
-      total: results.length,
+      total: checkedResults.length,
       outdated: outdated,
       upToDate: upToDate,
       failed: failed,
+      discontinued: discontinued,
+      vulnerable: vulnerable,
     );
     if (coverage != null) reporter.printCoverage(coverage);
     if (aiSummary != null) reporter.printAiSummary(aiSummary);
   } else {
     final reporter = ConsoleReporter();
-    reporter.report(results);
+    reporter.report(checkedResults);
     reporter.printSummary(
-      total: results.length,
+      total: checkedResults.length,
       outdated: outdated,
       upToDate: upToDate,
       failed: failed,
+      discontinued: discontinued,
+      vulnerable: vulnerable,
     );
+    if (doSecurity) reporter.printSecurity(checkedResults);
     if (coverage != null) reporter.printCoverage(coverage);
-    if (aiSummary != null) reporter.printAiSummary(aiSummary);
+    if (aiSummary != null) reporter.printAiSummary(aiSummary, provider: aiProvider);
   }
 
-  // Non-zero exit if outdated deps exist — CI friendly
-  exit(outdated > 0 ? 1 : 0);
+  // ─── Fix ─────────────────────────────────────────────────────────────────
+  if (doFix || dryRun) {
+    final fixResult = FixService().fix(
+      projectPath: projectPath,
+      results: checkedResults,
+      dryRun: dryRun,
+    );
+    if (format == 'console') {
+      if (fixResult.isSuccess) {
+        ConsoleReporter().printFixResult(fixResult.value!, dryRun: dryRun);
+      } else {
+        Logger.error('Fix failed: ${fixResult.error}');
+      }
+    }
+  }
+
+  // Non-zero exit if there are issues — CI friendly
+  exit((outdated + discontinued + vulnerable) > 0 ? 1 : 0);
 }
 
 void _printBanner() {
   print('''
 ╔══════════════════════════════════════════════╗
-║       Flutter Quality Analyzer  v2.1.1       ║
+║       Flutter Quality Analyzer  v2.2.0       ║
 ║  Versions · Licenses · Coverage · AI Summary ║
 ╚══════════════════════════════════════════════╝
 ''');

@@ -1,8 +1,7 @@
 /// Holds the complete analysis result for a single package.
 ///
 /// Includes version info, license, pub points, popularity score,
-/// and test coverage data. All new fields are nullable — they are
-/// only populated when the corresponding feature is enabled.
+/// test coverage, discontinued status and known vulnerabilities.
 class VersionCheckResult {
   final String packageName;
   final String? currentConstraint;
@@ -31,6 +30,20 @@ class VersionCheckResult {
   /// Number of test files found
   final int? testFileCount;
 
+  // ── Discontinued ──────────────────────────────────────────
+  /// True if pub.dev marks the package as discontinued
+  final bool isDiscontinued;
+
+  /// Suggested replacement package name (if discontinued)
+  final String? replacedBy;
+
+  // ── Security ──────────────────────────────────────────────
+  /// Number of known CVEs/GHSAs (null = not checked yet)
+  final int? vulnerabilityCount;
+
+  /// Highest severity among known vulnerabilities e.g. "CRITICAL"
+  final String? highestSeverity;
+
   const VersionCheckResult({
     required this.packageName,
     required this.currentConstraint,
@@ -43,6 +56,10 @@ class VersionCheckResult {
     this.likes,
     this.hasTests,
     this.testFileCount,
+    this.isDiscontinued = false,
+    this.replacedBy,
+    this.vulnerabilityCount,
+    this.highestSeverity,
   });
 
   /// Convenience factory for a failed fetch result.
@@ -68,6 +85,10 @@ class VersionCheckResult {
     int? likes,
     bool? hasTests,
     int? testFileCount,
+    bool? isDiscontinued,
+    String? replacedBy,
+    int? vulnerabilityCount,
+    String? highestSeverity,
   }) {
     return VersionCheckResult(
       packageName: packageName,
@@ -81,6 +102,10 @@ class VersionCheckResult {
       likes: likes ?? this.likes,
       hasTests: hasTests ?? this.hasTests,
       testFileCount: testFileCount ?? this.testFileCount,
+      isDiscontinued: isDiscontinued ?? this.isDiscontinued,
+      replacedBy: replacedBy ?? this.replacedBy,
+      vulnerabilityCount: vulnerabilityCount ?? this.vulnerabilityCount,
+      highestSeverity: highestSeverity ?? this.highestSeverity,
     );
   }
 

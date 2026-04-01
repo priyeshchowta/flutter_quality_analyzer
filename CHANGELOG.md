@@ -3,6 +3,13 @@
 All notable changes to `flutter_quality_analyzer` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.2.2] - 2026-04-01
+
+### Fixed
+- Shortened package description in `pubspec.yaml` to satisfy pub.dev limits
+- Removed invalid `homepage` and `repository` URLs from `pubspec.yaml`
+- Added top-level `example/flutter_quality_analyzer_example.dart` so pub.dev detects an example
+
 ## [2.2.1] - 2026-03-31
 
 ### Changed

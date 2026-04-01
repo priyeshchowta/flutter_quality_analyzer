@@ -1,6 +1,6 @@
 name: flutter_quality_analyzer
-description: A CLI tool that analyzes Flutter/Dart projects — version checks, license detection, security vulnerabilities (OSV), discontinued package detection, test coverage, auto-fix, and AI-powered summary via Gemini or Groq.
-version: 2.2.1
+description: CLI analyzer for Flutter/Dart dependencies, security, coverage, and AI health summary.
+version: 2.2.2
 homepage: https://github.com/priyeshchowta/flutter_quality_analyzer
 repository: https://github.com/priyeshchowta/flutter_quality_analyzer
 
